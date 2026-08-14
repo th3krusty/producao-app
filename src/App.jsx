@@ -10,7 +10,6 @@ import {
   CheckCircle2, Info, ChevronRight, Snowflake, Wrench
 } from "lucide-react";
 import * as XLSX from "xlsx";
-import { cloudGetItem, cloudSetItem, migrarDoLocalStorageSeNecessario } from "./supabaseClient";
 
 /* ============================== HELPERS ============================== */
 
@@ -241,59 +240,54 @@ export default function App() {
   const calc = useCalc(meta, producoes);
   const alerts = buildAlerts(calc, meta);
 
-  /* persistence (Supabase — os mesmos dados aparecem em qualquer dispositivo) */
+  /* persistence (localStorage — funciona em qualquer navegador) */
   useEffect(() => {
-    (async () => {
-      await migrarDoLocalStorageSeNecessario([
-        "meta-atual",
-        "producoes-atual",
-        "historico-mensal",
-        "producoes-arquivo",
-        "preferencia-tema",
-      ]);
-
-      const m = await cloudGetItem("meta-atual");
-      if (m) setMeta(m);
-
-      const p = await cloudGetItem("producoes-atual");
-      if (p) setProducoes(p);
-
-      const h = await cloudGetItem("historico-mensal");
-      if (h) setHistorico(h);
-
-      const a = await cloudGetItem("producoes-arquivo");
-      if (a) setArquivo(a);
-
-      const d = await cloudGetItem("preferencia-tema");
-      if (d !== null) setDark(d);
-
-      setLoaded(true);
-    })();
+    try {
+      const m = localStorage.getItem("meta-atual");
+      if (m) setMeta(JSON.parse(m));
+    } catch (e) {}
+    try {
+      const p = localStorage.getItem("producoes-atual");
+      if (p) setProducoes(JSON.parse(p));
+    } catch (e) {}
+    try {
+      const h = localStorage.getItem("historico-mensal");
+      if (h) setHistorico(JSON.parse(h));
+    } catch (e) {}
+    try {
+      const a = localStorage.getItem("producoes-arquivo");
+      if (a) setArquivo(JSON.parse(a));
+    } catch (e) {}
+    try {
+      const d = localStorage.getItem("preferencia-tema");
+      if (d) setDark(JSON.parse(d));
+    } catch (e) {}
+    setLoaded(true);
   }, []);
 
   useEffect(() => {
     if (!loaded) return;
-    cloudSetItem("meta-atual", meta);
+    localStorage.setItem("meta-atual", JSON.stringify(meta));
   }, [meta, loaded]);
 
   useEffect(() => {
     if (!loaded) return;
-    cloudSetItem("producoes-atual", producoes);
+    localStorage.setItem("producoes-atual", JSON.stringify(producoes));
   }, [producoes, loaded]);
 
   useEffect(() => {
     if (!loaded) return;
-    cloudSetItem("historico-mensal", historico);
+    localStorage.setItem("historico-mensal", JSON.stringify(historico));
   }, [historico, loaded]);
 
   useEffect(() => {
     if (!loaded) return;
-    cloudSetItem("producoes-arquivo", arquivo);
+    localStorage.setItem("producoes-arquivo", JSON.stringify(arquivo));
   }, [arquivo, loaded]);
 
   useEffect(() => {
     if (!loaded) return;
-    cloudSetItem("preferencia-tema", dark);
+    localStorage.setItem("preferencia-tema", JSON.stringify(dark));
   }, [dark, loaded]);
 
   /* Ao trocar o mês/ano da meta, arquiva os lançamentos do mês anterior
@@ -1157,25 +1151,23 @@ function PerdasRecuperacao({ t, producoes = [], meta }) {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    (async () => {
-      await migrarDoLocalStorageSeNecessario(["perdas-config", "perdas-blocos"]);
-
-      const s = await cloudGetItem("perdas-config");
-      if (s) setCfg((c) => ({ ...c, ...s }));
-
-      const b = await cloudGetItem("perdas-blocos");
-      if (b) setBlocos(b);
-
-      setLoaded(true);
-    })();
+    try {
+      const s = localStorage.getItem("perdas-config");
+      if (s) setCfg((c) => ({ ...c, ...JSON.parse(s) }));
+    } catch (e) {}
+    try {
+      const b = localStorage.getItem("perdas-blocos");
+      if (b) setBlocos(JSON.parse(b));
+    } catch (e) {}
+    setLoaded(true);
   }, []);
   useEffect(() => {
     if (!loaded) return;
-    cloudSetItem("perdas-config", cfg);
+    localStorage.setItem("perdas-config", JSON.stringify(cfg));
   }, [cfg, loaded]);
   useEffect(() => {
     if (!loaded) return;
-    cloudSetItem("perdas-blocos", blocos);
+    localStorage.setItem("perdas-blocos", JSON.stringify(blocos));
   }, [blocos, loaded]);
 
   const toggleTurno = (blockId, turno) => {
@@ -1195,17 +1187,34 @@ function PerdasRecuperacao({ t, producoes = [], meta }) {
     const producoesDoMes = prefixoMes
       ? producoes.filter((p) => typeof p.data === "string" && p.data.startsWith(prefixoMes))
       : producoes;
+
     const diasComDeficit = producoesDoMes.filter(
       (p) => Number(p.quantidade || 0) < Number(p.planejado || 0)
     );
-    const perdaProducaoRealPacotes = diasComDeficit.reduce(
+    const diasComSuperavit = producoesDoMes.filter(
+      (p) => Number(p.quantidade || 0) > Number(p.planejado || 0)
+    );
+
+    const deficitBrutoPacotes = diasComDeficit.reduce(
       (s, p) => s + (Number(p.planejado || 0) - Number(p.quantidade || 0)),
       0
     );
+    const superavitPacotes = diasComSuperavit.reduce(
+      (s, p) => s + (Number(p.quantidade || 0) - Number(p.planejado || 0)),
+      0
+    );
+
+    // Saldo líquido: dias que produziram a mais abatem o déficit dos dias que produziram a menos.
+    const perdaProducaoRealPacotes = Math.max(0, deficitBrutoPacotes - superavitPacotes);
+
     return {
       diasComDeficit,
+      diasComSuperavit,
+      deficitBrutoPacotes,
+      superavitPacotes,
       perdaProducaoRealPacotes,
       numDiasComDeficit: diasComDeficit.length,
+      numDiasComSuperavit: diasComSuperavit.length,
       totalLancamentosMes: producoesDoMes.length,
     };
   }, [producoes, meta]);
@@ -1351,7 +1360,7 @@ function PerdasRecuperacao({ t, producoes = [], meta }) {
           <div>
             <div className="text-sm font-semibold">Incluir perda real da produção diária</div>
             <div className={`text-xs ${t.textMuted} max-w-md`}>
-              Soma o déficit dos dias lançados abaixo do planejado{meta ? ` em ${MESES[meta.mes - 1]} de ${meta.ano}` : ""} (planejado − realizado, em pacotes), converte para massas usando a mesma proporção pacotes/massa acima e adiciona ao total a recuperar junto com o degelo. Lançamentos de outros meses não entram nessa conta.
+              Calcula o saldo líquido dos dias lançados{meta ? ` em ${MESES[meta.mes - 1]} de ${meta.ano}` : ""}: soma o déficit dos dias abaixo do planejado e abate o superávit dos dias que produziram a mais (em pacotes), converte pra massas e adiciona ao total a recuperar junto com o degelo. Lançamentos de outros meses não entram nessa conta.
             </div>
           </div>
           <button
@@ -1393,12 +1402,15 @@ function PerdasRecuperacao({ t, producoes = [], meta }) {
             </div>
           </div>
           <div>
-            <div className={`text-[10px] uppercase tracking-wide ${t.textMuted}`}>Perda real de produção</div>
+            <div className={`text-[10px] uppercase tracking-wide ${t.textMuted}`}>Perda real de produção (líquida)</div>
             <div className={`font-mono text-lg font-bold ${cfg.incluirPerdaReal ? "text-rose-400" : t.textMuted}`}>
               {fmt(c.perdaProducaoRealMassas)} massas
             </div>
             <div className={`text-xs ${t.textMuted}`}>
-              {fmt(producaoStats.perdaProducaoRealPacotes)} pacotes · {fmt(producaoStats.numDiasComDeficit)} de {fmt(producaoStats.totalLancamentosMes)} dia(s) lançados{meta ? ` em ${MESES[meta.mes - 1]}/${meta.ano}` : ""}{!cfg.incluirPerdaReal ? " · não incluída no total" : ""}
+              {fmt(producaoStats.perdaProducaoRealPacotes)} pacotes líquidos{meta ? ` em ${MESES[meta.mes - 1]}/${meta.ano}` : ""}{!cfg.incluirPerdaReal ? " · não incluída no total" : ""}
+            </div>
+            <div className={`text-xs ${t.textMuted} mt-0.5`}>
+              déficit bruto {fmt(producaoStats.deficitBrutoPacotes)} pac. ({producaoStats.numDiasComDeficit} dia{producaoStats.numDiasComDeficit === 1 ? "" : "s"}) − superávit {fmt(producaoStats.superavitPacotes)} pac. ({producaoStats.numDiasComSuperavit} dia{producaoStats.numDiasComSuperavit === 1 ? "" : "s"})
             </div>
           </div>
         </div>
