@@ -10,6 +10,7 @@ import {
   CheckCircle2, Info, ChevronRight, Snowflake, Wrench
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import { cloudGetItem, cloudSetItem, migrarDoLocalStorageSeNecessario } from "./supabaseClient";
 
 /* ============================== HELPERS ============================== */
 
@@ -240,54 +241,59 @@ export default function App() {
   const calc = useCalc(meta, producoes);
   const alerts = buildAlerts(calc, meta);
 
-  /* persistence (localStorage — funciona em qualquer navegador) */
+  /* persistence (Supabase — os mesmos dados aparecem em qualquer dispositivo) */
   useEffect(() => {
-    try {
-      const m = localStorage.getItem("meta-atual");
-      if (m) setMeta(JSON.parse(m));
-    } catch (e) {}
-    try {
-      const p = localStorage.getItem("producoes-atual");
-      if (p) setProducoes(JSON.parse(p));
-    } catch (e) {}
-    try {
-      const h = localStorage.getItem("historico-mensal");
-      if (h) setHistorico(JSON.parse(h));
-    } catch (e) {}
-    try {
-      const a = localStorage.getItem("producoes-arquivo");
-      if (a) setArquivo(JSON.parse(a));
-    } catch (e) {}
-    try {
-      const d = localStorage.getItem("preferencia-tema");
-      if (d) setDark(JSON.parse(d));
-    } catch (e) {}
-    setLoaded(true);
+    (async () => {
+      await migrarDoLocalStorageSeNecessario([
+        "meta-atual",
+        "producoes-atual",
+        "historico-mensal",
+        "producoes-arquivo",
+        "preferencia-tema",
+      ]);
+
+      const m = await cloudGetItem("meta-atual");
+      if (m) setMeta(m);
+
+      const p = await cloudGetItem("producoes-atual");
+      if (p) setProducoes(p);
+
+      const h = await cloudGetItem("historico-mensal");
+      if (h) setHistorico(h);
+
+      const a = await cloudGetItem("producoes-arquivo");
+      if (a) setArquivo(a);
+
+      const d = await cloudGetItem("preferencia-tema");
+      if (d !== null) setDark(d);
+
+      setLoaded(true);
+    })();
   }, []);
 
   useEffect(() => {
     if (!loaded) return;
-    localStorage.setItem("meta-atual", JSON.stringify(meta));
+    cloudSetItem("meta-atual", meta);
   }, [meta, loaded]);
 
   useEffect(() => {
     if (!loaded) return;
-    localStorage.setItem("producoes-atual", JSON.stringify(producoes));
+    cloudSetItem("producoes-atual", producoes);
   }, [producoes, loaded]);
 
   useEffect(() => {
     if (!loaded) return;
-    localStorage.setItem("historico-mensal", JSON.stringify(historico));
+    cloudSetItem("historico-mensal", historico);
   }, [historico, loaded]);
 
   useEffect(() => {
     if (!loaded) return;
-    localStorage.setItem("producoes-arquivo", JSON.stringify(arquivo));
+    cloudSetItem("producoes-arquivo", arquivo);
   }, [arquivo, loaded]);
 
   useEffect(() => {
     if (!loaded) return;
-    localStorage.setItem("preferencia-tema", JSON.stringify(dark));
+    cloudSetItem("preferencia-tema", dark);
   }, [dark, loaded]);
 
   /* Ao trocar o mês/ano da meta, arquiva os lançamentos do mês anterior
@@ -1151,23 +1157,25 @@ function PerdasRecuperacao({ t, producoes = [], meta }) {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    try {
-      const s = localStorage.getItem("perdas-config");
-      if (s) setCfg((c) => ({ ...c, ...JSON.parse(s) }));
-    } catch (e) {}
-    try {
-      const b = localStorage.getItem("perdas-blocos");
-      if (b) setBlocos(JSON.parse(b));
-    } catch (e) {}
-    setLoaded(true);
+    (async () => {
+      await migrarDoLocalStorageSeNecessario(["perdas-config", "perdas-blocos"]);
+
+      const s = await cloudGetItem("perdas-config");
+      if (s) setCfg((c) => ({ ...c, ...s }));
+
+      const b = await cloudGetItem("perdas-blocos");
+      if (b) setBlocos(b);
+
+      setLoaded(true);
+    })();
   }, []);
   useEffect(() => {
     if (!loaded) return;
-    localStorage.setItem("perdas-config", JSON.stringify(cfg));
+    cloudSetItem("perdas-config", cfg);
   }, [cfg, loaded]);
   useEffect(() => {
     if (!loaded) return;
-    localStorage.setItem("perdas-blocos", JSON.stringify(blocos));
+    cloudSetItem("perdas-blocos", blocos);
   }, [blocos, loaded]);
 
   const toggleTurno = (blockId, turno) => {
